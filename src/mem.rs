@@ -85,7 +85,7 @@ pub mod buffer {
     }
 
     impl<T, const N: usize> ops::Deref for Buffer<T, N> {
-        type Target = Box<[T]>;
+        type Target = [T];
 
         fn deref(&self) -> &Self::Target {
             &self.items
@@ -260,7 +260,6 @@ pub mod stack {
 
     impl<T, const N: usize> Vec<T, N> {
         const ITEM: mem::MaybeUninit<T> = mem::MaybeUninit::uninit();
-
         const ITEMS: [mem::MaybeUninit<T>; N] = [Self::ITEM; N];
 
         pub fn new() -> Self {

@@ -6,6 +6,7 @@ pub enum Species {
     None,
     Wall,
     Portal,
+    Light,
 }
 
 #[derive(bon::Builder, Default, Debug, Clone, Copy)]
@@ -22,6 +23,10 @@ pub struct Voxels {
 impl Voxels {
     pub fn new(x: usize, y: usize, z: usize) -> Self {
         Self { backing: buffer::Buffer::new([x, y, z]) }
+    }
+
+    pub fn clear(&mut self) {
+        self.backing.fill(Voxel::default());
     }
 
     pub fn set(&mut self, x: usize, y: usize, z: usize, color: u32) {

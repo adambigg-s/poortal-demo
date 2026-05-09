@@ -8,7 +8,8 @@ bon = "3.9.1"
 env_logger = "0.11.10"
 glam = "0.32.1"
 log = "0.4.29"
-minifb = "0.28.0"
+softbuffer = "0.4.8"
+winit = "0.30.13"
 
 [profile.dev]
 opt-level = 1
