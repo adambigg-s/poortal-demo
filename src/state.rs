@@ -46,16 +46,19 @@ pub struct State {
 
     pub time: time::Instant,
     pub tick: u64,
+    pub delta: f32,
 }
 
 impl State {
     pub fn frame(&mut self) {
+        self.delta = self.time.elapsed().as_secs_f32();
         log::info!("FPS: {:.2}", self.time.elapsed().as_secs_f32().recip());
         self.tick += 1;
         self.time = time::Instant::now();
         self.back_buffer.fill(WINDOW.lock().unwrap().back_clear);
         self.text_writer.reset();
-        self.text_writer.write_str(&mut self.back_buffer, &format!("{:?}", self.input));
+        self.text_writer.write_str(&mut self.back_buffer, &format!("{:?}\n", self.input));
+        self.text_writer.write_str(&mut self.back_buffer, &format!("{}", self.camera));
         game_frame(self);
         self.window
             .update_with_buffer(&self.back_buffer, self.back_buffer.width(), self.back_buffer.height())
