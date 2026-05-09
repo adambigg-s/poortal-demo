@@ -78,6 +78,12 @@ pub mod buffer {
         }
     }
 
+    impl<T, const N: usize> Default for Buffer<T, N> {
+        fn default() -> Self {
+            Self { size: [0; N], items: Default::default() }
+        }
+    }
+
     impl<T, const N: usize> ops::Deref for Buffer<T, N> {
         type Target = Box<[T]>;
 

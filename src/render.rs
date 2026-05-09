@@ -16,12 +16,6 @@ pub trait Raster {
 
 pub type RenderTarget<T> = buffer::Buffer<T, 2>;
 
-impl<T> Default for RenderTarget<T> {
-    fn default() -> Self {
-        Self::new([0, 0])
-    }
-}
-
 impl<T> Raster for RenderTarget<T> {
     type Item = T;
 
@@ -56,7 +50,7 @@ pub mod text {
         io::{self, Read},
     };
 
-    use crate::Raster;
+    use crate::render;
 
     const FONT_SIZE: usize = 256;
 
@@ -64,6 +58,7 @@ pub mod text {
 
     type BinRune = u64;
 
+    #[derive(Debug)]
     pub struct Font {
         pub runes: [BinRune; FONT_SIZE],
     }
@@ -104,7 +99,13 @@ pub mod text {
         }
     }
 
-    #[derive(Clone, Copy)]
+    impl Default for Font {
+        fn default() -> Self {
+            Self { runes: [0; 256] }
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
     pub struct TextConfig<T> {
         pub color: T,
         pub scale: usize,
@@ -139,6 +140,7 @@ pub mod text {
         }
     }
 
+    #[derive(Debug)]
     pub struct TextWriter<'d, T> {
         pub head_x: usize,
         pub head_y: usize,
@@ -185,7 +187,7 @@ pub mod text {
 
         pub fn write_char<R>(&mut self, raster: &mut R, chr: char)
         where
-            R: Raster<Item = T>,
+            R: render::Raster<Item = T>,
         {
             let scaled_stride_x = self.config.stride_x * self.config.scale;
             let scaled_stride_y = self.config.stride_y * self.config.scale;
@@ -237,7 +239,7 @@ pub mod text {
 
         pub fn write_str<R>(&mut self, raster: &mut R, text: &str)
         where
-            R: Raster<Item = T>,
+            R: render::Raster<Item = T>,
         {
             text.chars().for_each(|chr| {
                 self.write_char(raster, chr);
@@ -246,10 +248,24 @@ pub mod text {
 
         pub fn write_str_at<R>(&mut self, raster: &mut R, text: &str, col: usize, row: usize)
         where
-            R: Raster<Item = T>,
+            R: render::Raster<Item = T>,
         {
             self.set_pos(col, row);
             self.write_str(raster, text);
+        }
+    }
+
+    impl<T> Default for TextWriter<'static, T>
+    where
+        T: Default,
+    {
+        fn default() -> Self {
+            Self {
+                head_x: Default::default(),
+                head_y: Default::default(),
+                config: Default::default(),
+                font: &DEFAULT_FONT,
+            }
         }
     }
 }
@@ -301,6 +317,8 @@ pub mod ray {
 }
 
 pub mod camera {
+    pub const DEFAULT_RENDER_DISTANCE: f32 = 100.0;
+
     #[derive(Default, Debug)]
     pub struct CameraRays {
         drdx: glam::Vec3,
@@ -309,21 +327,31 @@ pub mod camera {
         hh: f32,
     }
 
-    #[derive(Default, Debug)]
+    #[derive(bon::Builder, Default, Debug)]
     pub struct Camera {
+        #[builder(default)]
         pub fvec: glam::Vec3,
+        #[builder(default)]
         pub rvec: glam::Vec3,
+        #[builder(default)]
         pub uvec: glam::Vec3,
+        #[builder(default)]
         pub wupvec: glam::Vec3,
 
+        #[builder(default)]
         pub yaw: f32,
+        #[builder(default)]
         pub pitch: f32,
+        #[builder(default)]
+        pub pos: glam::Vec3,
 
         pub lookspeed: f32,
         pub movespeed: f32,
 
         pub fov: f32,
-        pub ar: f32,
+        #[builder(default = DEFAULT_RENDER_DISTANCE)]
         pub renderdist: f32,
     }
+
+    impl Camera {}
 }
