@@ -1,434 +1,406 @@
-use std::{collections, num, rc, time};
+use core::num;
+use std::{collections, env, rc, time};
 
-use winit::{application, event::DeviceEvent, window};
+use winit::{application, dpi, event, event_loop, keyboard, window};
 
-pub const WTITLE: &str = "Poortal Demo";
-pub const WWIDTH: usize = 256;
-pub const WHEIGHT: usize = 196;
-pub const CLEAR_COLOR: u32 = 0xff_u32 << 24 | 25_u32 << 16 | 25_u32 << 8 | 40_u32;
+pub trait Application
+where
+    Self: Default,
+{
+    fn config() -> WindowState;
 
-use crate::{
-    render::{self, camera},
-    text, voxel,
-};
+    fn setup(context: &WindowState) -> Self;
 
-#[derive(Debug, Default)]
-#[allow(clippy::large_enum_variant)]
-pub enum AppPhase {
-    #[default]
-    Startup,
-    Running {
-        window: rc::Rc<window::Window>,
-        state: State,
-    },
+    fn frame(&mut self, context: &mut FrameData, pixels: &mut [u32]);
 }
 
-#[derive(Debug, Default)]
-pub struct App {
-    pub phase: AppPhase,
-    pub context: Option<softbuffer::Context<rc::Rc<window::Window>>>,
+#[derive(Debug)]
+pub struct WindowState {
+    pub title: &'static str,
+    pub width: usize,
+    pub height: usize,
+    pub clear_color: u32,
 }
 
-impl App {
-    pub fn new() -> Self {
-        Self::default()
+#[derive(Debug)]
+pub struct FrameData<'r> {
+    pub dt: f32,
+    pub tick: u64,
+    pub input: &'r Inputs,
+    pub mouse_delta: (f32, f32),
+}
+
+#[derive(Default, Debug)]
+pub struct Inputs {
+    pub keys: collections::HashSet<&'static str>,
+    pub dmouse: (f32, f32),
+}
+
+impl Inputs {
+    pub fn key(&self, name: &str) -> bool {
+        self.keys.contains(name)
+    }
+
+    pub fn consume_mouse(&mut self) -> (f32, f32) {
+        let delta = self.dmouse;
+        self.dmouse = Default::default();
+        delta
     }
 }
 
-impl application::ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if matches!(self.phase, AppPhase::Startup) {
-            let window = rc::Rc::new(
-                event_loop
-                    .create_window(
-                        winit::window::WindowAttributes::default()
-                            .with_title(WTITLE)
-                            .with_inner_size(winit::dpi::PhysicalSize::new(WWIDTH as u32, WHEIGHT as u32))
-                            .with_resizable(false),
-                    )
-                    .unwrap(),
-            );
-            let state = State::new(rc::Rc::clone(&window));
+pub fn game_init() {
+    unsafe { env::set_var("RUST_LOG", "debug") };
+    env_logger::init();
+}
 
-            *self = App {
-                phase: AppPhase::Running { window, state },
-                context: None,
-            }
+pub fn game_cleanup() {
+    log::info!("Application terminated successfully");
+}
+
+#[derive(Debug)]
+pub struct State<T> {
+    pub window: rc::Rc<window::Window>,
+    pub surface: softbuffer::Surface<rc::Rc<window::Window>, rc::Rc<window::Window>>,
+    pub inner_state: T,
+    pub input: Inputs,
+    pub time: time::Instant,
+    pub delta: f32,
+    pub tick: u64,
+}
+
+pub fn run<T>()
+where
+    T: Application + Default,
+{
+    game_init();
+    event_loop::EventLoop::new().unwrap().run_app(&mut AppPhase::<T>::Startup).unwrap();
+    game_cleanup();
+}
+
+#[derive(Default, Debug)]
+pub enum AppPhase<T> {
+    #[default]
+    Startup,
+    Running(State<T>),
+}
+
+impl<T> application::ApplicationHandler for AppPhase<T>
+where
+    T: Application,
+{
+    fn resumed(&mut self, event_loop: &event_loop::ActiveEventLoop) {
+        if !matches!(self, AppPhase::Startup) {
+            return;
         }
+
+        let config = T::config();
+        let window = rc::Rc::new(
+            event_loop
+                .create_window(
+                    window::WindowAttributes::default()
+                        .with_title(config.title)
+                        .with_inner_size(dpi::PhysicalSize::new(config.width as u32, config.height as u32))
+                        .with_resizable(false),
+                )
+                .unwrap(),
+        );
+        let context = softbuffer::Context::new(rc::Rc::clone(&window)).unwrap();
+        let mut surface = softbuffer::Surface::new(&context, rc::Rc::clone(&window)).unwrap();
+        surface
+            .resize(
+                num::NonZeroU32::new(config.width as u32).unwrap(),
+                num::NonZeroU32::new(config.height as u32).unwrap(),
+            )
+            .unwrap();
+
+        let app = T::setup(&config);
+
+        *self = AppPhase::Running(State {
+            window,
+            surface,
+            inner_state: app,
+            input: Default::default(),
+            time: time::Instant::now(),
+            delta: Default::default(),
+            tick: Default::default(),
+        })
     }
 
     fn window_event(
         &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
-        window_id: window::WindowId,
-        event: winit::event::WindowEvent,
+        event_loop: &event_loop::ActiveEventLoop,
+        _: window::WindowId,
+        event: event::WindowEvent,
     ) {
-        let AppPhase::Running { window, state } = &mut self.phase
+        let AppPhase::Running(state) = self
         else {
             return;
         };
-        if window_id != window.id() {
-            return;
-        }
 
         #[allow(unused_variables)]
         match event {
-            | winit::event::WindowEvent::ActivationTokenDone { serial, token } => todo!(),
-            | winit::event::WindowEvent::DroppedFile(path_buf) => todo!(),
-            | winit::event::WindowEvent::HoveredFile(path_buf) => todo!(),
-            | winit::event::WindowEvent::HoveredFileCancelled => todo!(),
-            | winit::event::WindowEvent::Ime(ime) => todo!(),
-            | winit::event::WindowEvent::MouseWheel { device_id, delta, phase } => todo!(),
-            | winit::event::WindowEvent::PinchGesture { device_id, delta, phase } => todo!(),
-            | winit::event::WindowEvent::PanGesture { device_id, delta, phase } => todo!(),
-            | winit::event::WindowEvent::DoubleTapGesture { device_id } => todo!(),
-            | winit::event::WindowEvent::RotationGesture { device_id, delta, phase } => todo!(),
-            | winit::event::WindowEvent::TouchpadPressure { device_id, pressure, stage } => todo!(),
-            | winit::event::WindowEvent::AxisMotion { device_id, axis, value } => todo!(),
-            | winit::event::WindowEvent::Touch(touch) => todo!(),
-            | winit::event::WindowEvent::ScaleFactorChanged { scale_factor, inner_size_writer } => todo!(),
-            | winit::event::WindowEvent::ThemeChanged(theme) => todo!(),
-            | winit::event::WindowEvent::Occluded(_) => todo!(),
-            | winit::event::WindowEvent::CloseRequested => {
-                event_loop.exit();
-            }
-            | winit::event::WindowEvent::Destroyed => {
-                event_loop.exit();
-            }
-            | winit::event::WindowEvent::Focused(true) => {}
-            | winit::event::WindowEvent::Focused(false) => {}
-            | winit::event::WindowEvent::Resized(physical_size) => {}
-            | winit::event::WindowEvent::ModifiersChanged(modifiers) => {}
-            | winit::event::WindowEvent::MouseInput { device_id, state, button } => {}
-            | winit::event::WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
-                let winit::keyboard::PhysicalKey::Code(keycode) = event.physical_key
+            | event::WindowEvent::ActivationTokenDone { serial, token } => todo!(),
+            | event::WindowEvent::Moved(physical_position) => todo!(),
+            | event::WindowEvent::DroppedFile(path_buf) => todo!(),
+            | event::WindowEvent::HoveredFile(path_buf) => todo!(),
+            | event::WindowEvent::HoveredFileCancelled => todo!(),
+            | event::WindowEvent::ModifiersChanged(modifiers) => todo!(),
+            | event::WindowEvent::Ime(ime) => todo!(),
+            | event::WindowEvent::MouseWheel { device_id, delta, phase } => todo!(),
+            | event::WindowEvent::MouseInput { device_id, state, button } => todo!(),
+            | event::WindowEvent::PinchGesture { device_id, delta, phase } => todo!(),
+            | event::WindowEvent::PanGesture { device_id, delta, phase } => todo!(),
+            | event::WindowEvent::DoubleTapGesture { device_id } => todo!(),
+            | event::WindowEvent::RotationGesture { device_id, delta, phase } => todo!(),
+            | event::WindowEvent::TouchpadPressure { device_id, pressure, stage } => todo!(),
+            | event::WindowEvent::AxisMotion { device_id, axis, value } => todo!(),
+            | event::WindowEvent::Touch(touch) => todo!(),
+            | event::WindowEvent::ScaleFactorChanged { scale_factor, inner_size_writer } => todo!(),
+            | event::WindowEvent::ThemeChanged(theme) => todo!(),
+            | event::WindowEvent::Occluded(_) => todo!(),
+            | event::WindowEvent::CloseRequested => event_loop.exit(),
+            | event::WindowEvent::Destroyed => event_loop.exit(),
+            | event::WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
+                let keyboard::PhysicalKey::Code(keycode) = event.physical_key
                 else {
                     return;
                 };
                 let name = keycode_name(keycode);
+                if name == "escape" {
+                    event_loop.exit();
+                }
                 match event.state {
-                    | winit::event::ElementState::Pressed => state.input.keys.insert(name),
-                    | winit::event::ElementState::Released => state.input.keys.remove(name),
+                    | event::ElementState::Pressed => state.input.keys.insert(name),
+                    | event::ElementState::Released => state.input.keys.remove(name),
                 };
             }
-            | winit::event::WindowEvent::CursorMoved { device_id, position } => {
-                log::info!("Mouse position: {:?}", position);
-            }
-            | winit::event::WindowEvent::CursorEntered { device_id } => {}
-            | winit::event::WindowEvent::Moved(physical_position) => {}
-            | winit::event::WindowEvent::CursorLeft { device_id } => {}
-            | winit::event::WindowEvent::RedrawRequested => {
-                state.update_frame(rc::Rc::clone(window));
-            }
-        }
-    }
+            | event::WindowEvent::Focused(_) => {}
+            | event::WindowEvent::Resized(_) => {}
+            | event::WindowEvent::CursorMoved { .. } => {}
+            | event::WindowEvent::CursorEntered { .. } => {}
+            | event::WindowEvent::CursorLeft { .. } => {}
+            | event::WindowEvent::RedrawRequested => {
+                let now = time::Instant::now();
+                state.delta = now.duration_since(state.time).as_secs_f32();
+                state.time = now;
+                state.tick += 1;
 
-    fn device_event(
-        &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
-        device_id: winit::event::DeviceId,
-        event: winit::event::DeviceEvent,
-    ) {
-        let AppPhase::Running { window, state } = &mut self.phase
-        else {
-            return;
-        };
+                let mouse_delta = state.input.consume_mouse();
+                let config = T::config();
+                let mut sb_buffer = state.surface.buffer_mut().unwrap();
 
-        if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event {
-            let (x, y) = &mut state.input.dmouse;
-            *x += dx as f32;
-            *y += dy as f32;
-        }
-    }
-}
+                let mut context = FrameData {
+                    dt: state.delta,
+                    tick: state.tick,
+                    input: &state.input,
+                    mouse_delta,
+                };
 
-#[derive(Default, Debug)]
-pub struct Input {
-    pub keys: collections::HashSet<&'static str>,
-    pub dmouse: (f32, f32),
-    pub front: bool,
-}
+                state.inner_state.frame(&mut context, &mut sb_buffer);
 
-#[derive(Debug)]
-pub struct State {
-    pub surface: softbuffer::Surface<rc::Rc<window::Window>, rc::Rc<window::Window>>,
-    pub back_buffer: render::RenderTarget<u32>,
-    pub text_writer: text::TextWriter<'static, u32>,
-
-    pub input: Input,
-
-    pub camera: camera::Camera,
-    pub voxels: voxel::Voxels,
-
-    pub time: time::Instant,
-    pub tick: u64,
-    pub delta: f32,
-}
-
-impl State {
-    pub fn new(window: rc::Rc<window::Window>) -> Self {
-        let ctx = softbuffer::Context::new(rc::Rc::clone(&window)).unwrap();
-
-        let mut surface = softbuffer::Surface::new(&ctx, rc::Rc::clone(&window)).unwrap();
-        surface
-            .resize(
-                num::NonZeroU32::new(WWIDTH as u32).unwrap(),
-                num::NonZeroU32::new(WHEIGHT as u32).unwrap(),
-            )
-            .unwrap();
-
-        let writer = text::TextWriter::default_font(text::TextConfig::new_color(u32::MAX));
-        let back_buffer = render::RenderTarget::new([WWIDTH, WHEIGHT]);
-        let camera = camera::Camera::builder()
-            .movespeed(13.0)
-            .lookspeed(1.2)
-            .fov(90.0)
-            .pos(glam::vec3(10.0, 10.0, 10.0))
-            .build();
-
-        let mut voxels = voxel::Voxels::new(32, 32, 32);
-        voxels.clear();
-        for i in 0..32 {
-            for j in 0..32 {
-                if (i + j) % 2 == 0 {
-                    voxels.set(i, 31, j, 0xff00ffff);
-                }
-                else {
-                    voxels.set(i, 31, j, 0xffffff0f);
-                }
+                sb_buffer.present().unwrap();
+                state.window.request_redraw();
             }
         }
-
-        State {
-            surface,
-            back_buffer,
-            text_writer: writer,
-            input: Default::default(),
-            camera,
-            voxels,
-            time: time::Instant::now(),
-            tick: 0,
-            delta: 0.0,
-        }
-    }
-
-    pub fn update_frame(&mut self, window: rc::Rc<window::Window>) {
-        log::info!("FPS: {:.2}", self.delta.recip());
-        log::info!("Mouse Delta: {:?}", self.input.dmouse);
-
-        self.delta = self.time.elapsed().as_secs_f32();
-        self.time = time::Instant::now();
-        self.tick += 1;
-
-        self.back_buffer.fill(CLEAR_COLOR);
-
-        let mut sb_buffer = self.surface.buffer_mut().unwrap();
-        let src = &*self.back_buffer;
-        for (dst, &src_px) in sb_buffer.iter_mut().zip(src.iter()) {
-            *dst = src_px;
-        }
-        sb_buffer.present().unwrap();
-
-        window.request_redraw();
     }
 }
 
-fn keycode_name(keycode: winit::keyboard::KeyCode) -> &'static str {
+fn keycode_name(keycode: keyboard::KeyCode) -> &'static str {
     match keycode {
-        | winit::keyboard::KeyCode::Backquote => "backquote",
-        | winit::keyboard::KeyCode::Backslash => "backslash",
-        | winit::keyboard::KeyCode::BracketLeft => "bracketleft",
-        | winit::keyboard::KeyCode::BracketRight => "bracketright",
-        | winit::keyboard::KeyCode::Comma => "comma",
-        | winit::keyboard::KeyCode::Digit0 => "digit0",
-        | winit::keyboard::KeyCode::Digit1 => "digit1",
-        | winit::keyboard::KeyCode::Digit2 => "digit2",
-        | winit::keyboard::KeyCode::Digit3 => "digit3",
-        | winit::keyboard::KeyCode::Digit4 => "digit4",
-        | winit::keyboard::KeyCode::Digit5 => "digit5",
-        | winit::keyboard::KeyCode::Digit6 => "digit6",
-        | winit::keyboard::KeyCode::Digit7 => "digit7",
-        | winit::keyboard::KeyCode::Digit8 => "digit8",
-        | winit::keyboard::KeyCode::Digit9 => "digit9",
-        | winit::keyboard::KeyCode::Equal => "equal",
-        | winit::keyboard::KeyCode::IntlBackslash => "intlbackslash",
-        | winit::keyboard::KeyCode::IntlRo => "intlro",
-        | winit::keyboard::KeyCode::IntlYen => "intlyen",
-        | winit::keyboard::KeyCode::KeyA => "keya",
-        | winit::keyboard::KeyCode::KeyB => "keyb",
-        | winit::keyboard::KeyCode::KeyC => "keyc",
-        | winit::keyboard::KeyCode::KeyD => "keyd",
-        | winit::keyboard::KeyCode::KeyE => "keye",
-        | winit::keyboard::KeyCode::KeyF => "keyf",
-        | winit::keyboard::KeyCode::KeyG => "keyg",
-        | winit::keyboard::KeyCode::KeyH => "keyh",
-        | winit::keyboard::KeyCode::KeyI => "keyi",
-        | winit::keyboard::KeyCode::KeyJ => "keyj",
-        | winit::keyboard::KeyCode::KeyK => "keyk",
-        | winit::keyboard::KeyCode::KeyL => "keyl",
-        | winit::keyboard::KeyCode::KeyM => "keym",
-        | winit::keyboard::KeyCode::KeyN => "keyn",
-        | winit::keyboard::KeyCode::KeyO => "keyo",
-        | winit::keyboard::KeyCode::KeyP => "keyp",
-        | winit::keyboard::KeyCode::KeyQ => "keyq",
-        | winit::keyboard::KeyCode::KeyR => "keyr",
-        | winit::keyboard::KeyCode::KeyS => "keys",
-        | winit::keyboard::KeyCode::KeyT => "keyt",
-        | winit::keyboard::KeyCode::KeyU => "keyu",
-        | winit::keyboard::KeyCode::KeyV => "keyv",
-        | winit::keyboard::KeyCode::KeyW => "keyw",
-        | winit::keyboard::KeyCode::KeyX => "keyx",
-        | winit::keyboard::KeyCode::KeyY => "keyy",
-        | winit::keyboard::KeyCode::KeyZ => "keyz",
-        | winit::keyboard::KeyCode::Minus => "minus",
-        | winit::keyboard::KeyCode::Period => "period",
-        | winit::keyboard::KeyCode::Quote => "quote",
-        | winit::keyboard::KeyCode::Semicolon => "semicolon",
-        | winit::keyboard::KeyCode::Slash => "slash",
-        | winit::keyboard::KeyCode::AltLeft => "altleft",
-        | winit::keyboard::KeyCode::AltRight => "altright",
-        | winit::keyboard::KeyCode::Backspace => "backspace",
-        | winit::keyboard::KeyCode::CapsLock => "capslock",
-        | winit::keyboard::KeyCode::ContextMenu => "contextmenu",
-        | winit::keyboard::KeyCode::ControlLeft => "controlleft",
-        | winit::keyboard::KeyCode::ControlRight => "controlright",
-        | winit::keyboard::KeyCode::Enter => "enter",
-        | winit::keyboard::KeyCode::SuperLeft => "superleft",
-        | winit::keyboard::KeyCode::SuperRight => "superright",
-        | winit::keyboard::KeyCode::ShiftLeft => "shiftleft",
-        | winit::keyboard::KeyCode::ShiftRight => "shiftright",
-        | winit::keyboard::KeyCode::Space => "space",
-        | winit::keyboard::KeyCode::Tab => "tab",
-        | winit::keyboard::KeyCode::Convert => "convert",
-        | winit::keyboard::KeyCode::KanaMode => "kanamode",
-        | winit::keyboard::KeyCode::Lang1 => "lang1",
-        | winit::keyboard::KeyCode::Lang2 => "lang2",
-        | winit::keyboard::KeyCode::Lang3 => "lang3",
-        | winit::keyboard::KeyCode::Lang4 => "lang4",
-        | winit::keyboard::KeyCode::Lang5 => "lang5",
-        | winit::keyboard::KeyCode::NonConvert => "nonconvert",
-        | winit::keyboard::KeyCode::Delete => "delete",
-        | winit::keyboard::KeyCode::End => "end",
-        | winit::keyboard::KeyCode::Help => "help",
-        | winit::keyboard::KeyCode::Home => "home",
-        | winit::keyboard::KeyCode::Insert => "insert",
-        | winit::keyboard::KeyCode::PageDown => "pagedown",
-        | winit::keyboard::KeyCode::PageUp => "pageup",
-        | winit::keyboard::KeyCode::ArrowDown => "arrowdown",
-        | winit::keyboard::KeyCode::ArrowLeft => "arrowleft",
-        | winit::keyboard::KeyCode::ArrowRight => "arrowright",
-        | winit::keyboard::KeyCode::ArrowUp => "arrowup",
-        | winit::keyboard::KeyCode::NumLock => "numlock",
-        | winit::keyboard::KeyCode::Numpad0 => "numpad0",
-        | winit::keyboard::KeyCode::Numpad1 => "numpad1",
-        | winit::keyboard::KeyCode::Numpad2 => "numpad2",
-        | winit::keyboard::KeyCode::Numpad3 => "numpad3",
-        | winit::keyboard::KeyCode::Numpad4 => "numpad4",
-        | winit::keyboard::KeyCode::Numpad5 => "numpad5",
-        | winit::keyboard::KeyCode::Numpad6 => "numpad6",
-        | winit::keyboard::KeyCode::Numpad7 => "numpad7",
-        | winit::keyboard::KeyCode::Numpad8 => "numpad8",
-        | winit::keyboard::KeyCode::Numpad9 => "numpad9",
-        | winit::keyboard::KeyCode::NumpadAdd => "numpadadd",
-        | winit::keyboard::KeyCode::NumpadBackspace => "numpadbackspace",
-        | winit::keyboard::KeyCode::NumpadClear => "numpadclear",
-        | winit::keyboard::KeyCode::NumpadClearEntry => "numpadclearentry",
-        | winit::keyboard::KeyCode::NumpadComma => "numpadcomma",
-        | winit::keyboard::KeyCode::NumpadDecimal => "numpaddecimal",
-        | winit::keyboard::KeyCode::NumpadDivide => "numpaddivide",
-        | winit::keyboard::KeyCode::NumpadEnter => "numpadenter",
-        | winit::keyboard::KeyCode::NumpadEqual => "numpadequal",
-        | winit::keyboard::KeyCode::NumpadHash => "numpadhash",
-        | winit::keyboard::KeyCode::NumpadMemoryAdd => "numpadmemoryadd",
-        | winit::keyboard::KeyCode::NumpadMemoryClear => "numpadmemoryclear",
-        | winit::keyboard::KeyCode::NumpadMemoryRecall => "numpadmemoryrecall",
-        | winit::keyboard::KeyCode::NumpadMemoryStore => "numpadmemorystore",
-        | winit::keyboard::KeyCode::NumpadMemorySubtract => "numpadmemorysubtract",
-        | winit::keyboard::KeyCode::NumpadMultiply => "numpadmultiply",
-        | winit::keyboard::KeyCode::NumpadParenLeft => "numpadparenleft",
-        | winit::keyboard::KeyCode::NumpadParenRight => "numpadparenright",
-        | winit::keyboard::KeyCode::NumpadStar => "numpadstar",
-        | winit::keyboard::KeyCode::NumpadSubtract => "numpadsubtract",
-        | winit::keyboard::KeyCode::Escape => "escape",
-        | winit::keyboard::KeyCode::Fn => "fn",
-        | winit::keyboard::KeyCode::FnLock => "fnlock",
-        | winit::keyboard::KeyCode::PrintScreen => "printscreen",
-        | winit::keyboard::KeyCode::ScrollLock => "scrolllock",
-        | winit::keyboard::KeyCode::Pause => "pause",
-        | winit::keyboard::KeyCode::BrowserBack => "browserback",
-        | winit::keyboard::KeyCode::BrowserFavorites => "browserfavorites",
-        | winit::keyboard::KeyCode::BrowserForward => "browserforward",
-        | winit::keyboard::KeyCode::BrowserHome => "browserhome",
-        | winit::keyboard::KeyCode::BrowserRefresh => "browserrefresh",
-        | winit::keyboard::KeyCode::BrowserSearch => "browsersearch",
-        | winit::keyboard::KeyCode::BrowserStop => "browserstop",
-        | winit::keyboard::KeyCode::Eject => "eject",
-        | winit::keyboard::KeyCode::LaunchApp1 => "launchapp1",
-        | winit::keyboard::KeyCode::LaunchApp2 => "launchapp2",
-        | winit::keyboard::KeyCode::LaunchMail => "launchmail",
-        | winit::keyboard::KeyCode::MediaPlayPause => "mediaplaypause",
-        | winit::keyboard::KeyCode::MediaSelect => "mediaselect",
-        | winit::keyboard::KeyCode::MediaStop => "mediastop",
-        | winit::keyboard::KeyCode::MediaTrackNext => "mediatracknext",
-        | winit::keyboard::KeyCode::MediaTrackPrevious => "mediatrackprevious",
-        | winit::keyboard::KeyCode::Power => "power",
-        | winit::keyboard::KeyCode::Sleep => "sleep",
-        | winit::keyboard::KeyCode::AudioVolumeDown => "audiovolumedown",
-        | winit::keyboard::KeyCode::AudioVolumeMute => "audiovolumemute",
-        | winit::keyboard::KeyCode::AudioVolumeUp => "audiovolumeup",
-        | winit::keyboard::KeyCode::WakeUp => "wakeup",
-        | winit::keyboard::KeyCode::Meta => "meta",
-        | winit::keyboard::KeyCode::Hyper => "hyper",
-        | winit::keyboard::KeyCode::Turbo => "turbo",
-        | winit::keyboard::KeyCode::Abort => "abort",
-        | winit::keyboard::KeyCode::Resume => "resume",
-        | winit::keyboard::KeyCode::Suspend => "suspend",
-        | winit::keyboard::KeyCode::Again => "again",
-        | winit::keyboard::KeyCode::Copy => "copy",
-        | winit::keyboard::KeyCode::Cut => "cut",
-        | winit::keyboard::KeyCode::Find => "find",
-        | winit::keyboard::KeyCode::Open => "open",
-        | winit::keyboard::KeyCode::Paste => "paste",
-        | winit::keyboard::KeyCode::Props => "props",
-        | winit::keyboard::KeyCode::Select => "select",
-        | winit::keyboard::KeyCode::Undo => "undo",
-        | winit::keyboard::KeyCode::Hiragana => "hiragana",
-        | winit::keyboard::KeyCode::Katakana => "katakana",
-        | winit::keyboard::KeyCode::F1 => "f1",
-        | winit::keyboard::KeyCode::F2 => "f2",
-        | winit::keyboard::KeyCode::F3 => "f3",
-        | winit::keyboard::KeyCode::F4 => "f4",
-        | winit::keyboard::KeyCode::F5 => "f5",
-        | winit::keyboard::KeyCode::F6 => "f6",
-        | winit::keyboard::KeyCode::F7 => "f7",
-        | winit::keyboard::KeyCode::F8 => "f8",
-        | winit::keyboard::KeyCode::F9 => "f9",
-        | winit::keyboard::KeyCode::F10 => "f10",
-        | winit::keyboard::KeyCode::F11 => "f11",
-        | winit::keyboard::KeyCode::F12 => "f12",
-        | winit::keyboard::KeyCode::F13 => "f13",
-        | winit::keyboard::KeyCode::F14 => "f14",
-        | winit::keyboard::KeyCode::F15 => "f15",
-        | winit::keyboard::KeyCode::F16 => "f16",
-        | winit::keyboard::KeyCode::F17 => "f17",
-        | winit::keyboard::KeyCode::F18 => "f18",
-        | winit::keyboard::KeyCode::F19 => "f19",
-        | winit::keyboard::KeyCode::F20 => "f20",
-        | winit::keyboard::KeyCode::F21 => "f21",
-        | winit::keyboard::KeyCode::F22 => "f22",
-        | winit::keyboard::KeyCode::F23 => "f23",
-        | winit::keyboard::KeyCode::F24 => "f24",
-        | winit::keyboard::KeyCode::F25 => "f25",
-        | winit::keyboard::KeyCode::F26 => "f26",
-        | winit::keyboard::KeyCode::F27 => "f27",
-        | winit::keyboard::KeyCode::F28 => "f28",
-        | winit::keyboard::KeyCode::F29 => "f29",
-        | winit::keyboard::KeyCode::F30 => "f30",
-        | winit::keyboard::KeyCode::F31 => "f31",
-        | winit::keyboard::KeyCode::F32 => "f32",
-        | winit::keyboard::KeyCode::F33 => "f33",
-        | winit::keyboard::KeyCode::F34 => "f34",
-        | winit::keyboard::KeyCode::F35 => "f35",
+        | keyboard::KeyCode::Backquote => "backquote",
+        | keyboard::KeyCode::Backslash => "backslash",
+        | keyboard::KeyCode::BracketLeft => "bracketleft",
+        | keyboard::KeyCode::BracketRight => "bracketright",
+        | keyboard::KeyCode::Comma => "comma",
+        | keyboard::KeyCode::Digit0 => "digit0",
+        | keyboard::KeyCode::Digit1 => "digit1",
+        | keyboard::KeyCode::Digit2 => "digit2",
+        | keyboard::KeyCode::Digit3 => "digit3",
+        | keyboard::KeyCode::Digit4 => "digit4",
+        | keyboard::KeyCode::Digit5 => "digit5",
+        | keyboard::KeyCode::Digit6 => "digit6",
+        | keyboard::KeyCode::Digit7 => "digit7",
+        | keyboard::KeyCode::Digit8 => "digit8",
+        | keyboard::KeyCode::Digit9 => "digit9",
+        | keyboard::KeyCode::Equal => "equal",
+        | keyboard::KeyCode::IntlBackslash => "intlbackslash",
+        | keyboard::KeyCode::IntlRo => "intlro",
+        | keyboard::KeyCode::IntlYen => "intlyen",
+        | keyboard::KeyCode::KeyA => "keya",
+        | keyboard::KeyCode::KeyB => "keyb",
+        | keyboard::KeyCode::KeyC => "keyc",
+        | keyboard::KeyCode::KeyD => "keyd",
+        | keyboard::KeyCode::KeyE => "keye",
+        | keyboard::KeyCode::KeyF => "keyf",
+        | keyboard::KeyCode::KeyG => "keyg",
+        | keyboard::KeyCode::KeyH => "keyh",
+        | keyboard::KeyCode::KeyI => "keyi",
+        | keyboard::KeyCode::KeyJ => "keyj",
+        | keyboard::KeyCode::KeyK => "keyk",
+        | keyboard::KeyCode::KeyL => "keyl",
+        | keyboard::KeyCode::KeyM => "keym",
+        | keyboard::KeyCode::KeyN => "keyn",
+        | keyboard::KeyCode::KeyO => "keyo",
+        | keyboard::KeyCode::KeyP => "keyp",
+        | keyboard::KeyCode::KeyQ => "keyq",
+        | keyboard::KeyCode::KeyR => "keyr",
+        | keyboard::KeyCode::KeyS => "keys",
+        | keyboard::KeyCode::KeyT => "keyt",
+        | keyboard::KeyCode::KeyU => "keyu",
+        | keyboard::KeyCode::KeyV => "keyv",
+        | keyboard::KeyCode::KeyW => "keyw",
+        | keyboard::KeyCode::KeyX => "keyx",
+        | keyboard::KeyCode::KeyY => "keyy",
+        | keyboard::KeyCode::KeyZ => "keyz",
+        | keyboard::KeyCode::Minus => "minus",
+        | keyboard::KeyCode::Period => "period",
+        | keyboard::KeyCode::Quote => "quote",
+        | keyboard::KeyCode::Semicolon => "semicolon",
+        | keyboard::KeyCode::Slash => "slash",
+        | keyboard::KeyCode::AltLeft => "altleft",
+        | keyboard::KeyCode::AltRight => "altright",
+        | keyboard::KeyCode::Backspace => "backspace",
+        | keyboard::KeyCode::CapsLock => "capslock",
+        | keyboard::KeyCode::ContextMenu => "contextmenu",
+        | keyboard::KeyCode::ControlLeft => "controlleft",
+        | keyboard::KeyCode::ControlRight => "controlright",
+        | keyboard::KeyCode::Enter => "enter",
+        | keyboard::KeyCode::SuperLeft => "superleft",
+        | keyboard::KeyCode::SuperRight => "superright",
+        | keyboard::KeyCode::ShiftLeft => "shiftleft",
+        | keyboard::KeyCode::ShiftRight => "shiftright",
+        | keyboard::KeyCode::Space => "space",
+        | keyboard::KeyCode::Tab => "tab",
+        | keyboard::KeyCode::Convert => "convert",
+        | keyboard::KeyCode::KanaMode => "kanamode",
+        | keyboard::KeyCode::Lang1 => "lang1",
+        | keyboard::KeyCode::Lang2 => "lang2",
+        | keyboard::KeyCode::Lang3 => "lang3",
+        | keyboard::KeyCode::Lang4 => "lang4",
+        | keyboard::KeyCode::Lang5 => "lang5",
+        | keyboard::KeyCode::NonConvert => "nonconvert",
+        | keyboard::KeyCode::Delete => "delete",
+        | keyboard::KeyCode::End => "end",
+        | keyboard::KeyCode::Help => "help",
+        | keyboard::KeyCode::Home => "home",
+        | keyboard::KeyCode::Insert => "insert",
+        | keyboard::KeyCode::PageDown => "pagedown",
+        | keyboard::KeyCode::PageUp => "pageup",
+        | keyboard::KeyCode::ArrowDown => "arrowdown",
+        | keyboard::KeyCode::ArrowLeft => "arrowleft",
+        | keyboard::KeyCode::ArrowRight => "arrowright",
+        | keyboard::KeyCode::ArrowUp => "arrowup",
+        | keyboard::KeyCode::NumLock => "numlock",
+        | keyboard::KeyCode::Numpad0 => "numpad0",
+        | keyboard::KeyCode::Numpad1 => "numpad1",
+        | keyboard::KeyCode::Numpad2 => "numpad2",
+        | keyboard::KeyCode::Numpad3 => "numpad3",
+        | keyboard::KeyCode::Numpad4 => "numpad4",
+        | keyboard::KeyCode::Numpad5 => "numpad5",
+        | keyboard::KeyCode::Numpad6 => "numpad6",
+        | keyboard::KeyCode::Numpad7 => "numpad7",
+        | keyboard::KeyCode::Numpad8 => "numpad8",
+        | keyboard::KeyCode::Numpad9 => "numpad9",
+        | keyboard::KeyCode::NumpadAdd => "numpadadd",
+        | keyboard::KeyCode::NumpadBackspace => "numpadbackspace",
+        | keyboard::KeyCode::NumpadClear => "numpadclear",
+        | keyboard::KeyCode::NumpadClearEntry => "numpadclearentry",
+        | keyboard::KeyCode::NumpadComma => "numpadcomma",
+        | keyboard::KeyCode::NumpadDecimal => "numpaddecimal",
+        | keyboard::KeyCode::NumpadDivide => "numpaddivide",
+        | keyboard::KeyCode::NumpadEnter => "numpadenter",
+        | keyboard::KeyCode::NumpadEqual => "numpadequal",
+        | keyboard::KeyCode::NumpadHash => "numpadhash",
+        | keyboard::KeyCode::NumpadMemoryAdd => "numpadmemoryadd",
+        | keyboard::KeyCode::NumpadMemoryClear => "numpadmemoryclear",
+        | keyboard::KeyCode::NumpadMemoryRecall => "numpadmemoryrecall",
+        | keyboard::KeyCode::NumpadMemoryStore => "numpadmemorystore",
+        | keyboard::KeyCode::NumpadMemorySubtract => "numpadmemorysubtract",
+        | keyboard::KeyCode::NumpadMultiply => "numpadmultiply",
+        | keyboard::KeyCode::NumpadParenLeft => "numpadparenleft",
+        | keyboard::KeyCode::NumpadParenRight => "numpadparenright",
+        | keyboard::KeyCode::NumpadStar => "numpadstar",
+        | keyboard::KeyCode::NumpadSubtract => "numpadsubtract",
+        | keyboard::KeyCode::Escape => "escape",
+        | keyboard::KeyCode::Fn => "fn",
+        | keyboard::KeyCode::FnLock => "fnlock",
+        | keyboard::KeyCode::PrintScreen => "printscreen",
+        | keyboard::KeyCode::ScrollLock => "scrolllock",
+        | keyboard::KeyCode::Pause => "pause",
+        | keyboard::KeyCode::BrowserBack => "browserback",
+        | keyboard::KeyCode::BrowserFavorites => "browserfavorites",
+        | keyboard::KeyCode::BrowserForward => "browserforward",
+        | keyboard::KeyCode::BrowserHome => "browserhome",
+        | keyboard::KeyCode::BrowserRefresh => "browserrefresh",
+        | keyboard::KeyCode::BrowserSearch => "browsersearch",
+        | keyboard::KeyCode::BrowserStop => "browserstop",
+        | keyboard::KeyCode::Eject => "eject",
+        | keyboard::KeyCode::LaunchApp1 => "launchapp1",
+        | keyboard::KeyCode::LaunchApp2 => "launchapp2",
+        | keyboard::KeyCode::LaunchMail => "launchmail",
+        | keyboard::KeyCode::MediaPlayPause => "mediaplaypause",
+        | keyboard::KeyCode::MediaSelect => "mediaselect",
+        | keyboard::KeyCode::MediaStop => "mediastop",
+        | keyboard::KeyCode::MediaTrackNext => "mediatracknext",
+        | keyboard::KeyCode::MediaTrackPrevious => "mediatrackprevious",
+        | keyboard::KeyCode::Power => "power",
+        | keyboard::KeyCode::Sleep => "sleep",
+        | keyboard::KeyCode::AudioVolumeDown => "audiovolumedown",
+        | keyboard::KeyCode::AudioVolumeMute => "audiovolumemute",
+        | keyboard::KeyCode::AudioVolumeUp => "audiovolumeup",
+        | keyboard::KeyCode::WakeUp => "wakeup",
+        | keyboard::KeyCode::Meta => "meta",
+        | keyboard::KeyCode::Hyper => "hyper",
+        | keyboard::KeyCode::Turbo => "turbo",
+        | keyboard::KeyCode::Abort => "abort",
+        | keyboard::KeyCode::Resume => "resume",
+        | keyboard::KeyCode::Suspend => "suspend",
+        | keyboard::KeyCode::Again => "again",
+        | keyboard::KeyCode::Copy => "copy",
+        | keyboard::KeyCode::Cut => "cut",
+        | keyboard::KeyCode::Find => "find",
+        | keyboard::KeyCode::Open => "open",
+        | keyboard::KeyCode::Paste => "paste",
+        | keyboard::KeyCode::Props => "props",
+        | keyboard::KeyCode::Select => "select",
+        | keyboard::KeyCode::Undo => "undo",
+        | keyboard::KeyCode::Hiragana => "hiragana",
+        | keyboard::KeyCode::Katakana => "katakana",
+        | keyboard::KeyCode::F1 => "f1",
+        | keyboard::KeyCode::F2 => "f2",
+        | keyboard::KeyCode::F3 => "f3",
+        | keyboard::KeyCode::F4 => "f4",
+        | keyboard::KeyCode::F5 => "f5",
+        | keyboard::KeyCode::F6 => "f6",
+        | keyboard::KeyCode::F7 => "f7",
+        | keyboard::KeyCode::F8 => "f8",
+        | keyboard::KeyCode::F9 => "f9",
+        | keyboard::KeyCode::F10 => "f10",
+        | keyboard::KeyCode::F11 => "f11",
+        | keyboard::KeyCode::F12 => "f12",
+        | keyboard::KeyCode::F13 => "f13",
+        | keyboard::KeyCode::F14 => "f14",
+        | keyboard::KeyCode::F15 => "f15",
+        | keyboard::KeyCode::F16 => "f16",
+        | keyboard::KeyCode::F17 => "f17",
+        | keyboard::KeyCode::F18 => "f18",
+        | keyboard::KeyCode::F19 => "f19",
+        | keyboard::KeyCode::F20 => "f20",
+        | keyboard::KeyCode::F21 => "f21",
+        | keyboard::KeyCode::F22 => "f22",
+        | keyboard::KeyCode::F23 => "f23",
+        | keyboard::KeyCode::F24 => "f24",
+        | keyboard::KeyCode::F25 => "f25",
+        | keyboard::KeyCode::F26 => "f26",
+        | keyboard::KeyCode::F27 => "f27",
+        | keyboard::KeyCode::F28 => "f28",
+        | keyboard::KeyCode::F29 => "f29",
+        | keyboard::KeyCode::F30 => "f30",
+        | keyboard::KeyCode::F31 => "f31",
+        | keyboard::KeyCode::F32 => "f32",
+        | keyboard::KeyCode::F33 => "f33",
+        | keyboard::KeyCode::F34 => "f34",
+        | keyboard::KeyCode::F35 => "f35",
         | _ => "",
     }
 }

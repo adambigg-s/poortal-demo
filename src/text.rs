@@ -36,7 +36,6 @@ impl Font {
     pub const fn from_bytes(bytes: &[u8]) -> Self {
         let mut runes = [0u64; FONT_SIZE];
         let mut i = 0;
-
         while i < FONT_SIZE {
             let mut buf = [0u8; 8];
             let mut j = 0;
