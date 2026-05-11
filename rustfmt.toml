@@ -1,0 +1,15 @@
+### Base Config
+# "--config", "control_brace_style=ClosingNextLine", "--config", "max_width=110", "--config", "use_small_heuristics=default", "--config", "single_line_if_else_max_width=70", "--config", "single_line_let_else_max_width=75", "--config", "match_arm_leading_pipes=Always", "--config", "struct_lit_width=55", "--config", "struct_variant_width=55", "--config", "chain_width=90", "--config", "fn_call_width=90", "--edition", "2024"
+
+unstable_features              = true
+control_brace_style            = "ClosingNextLine"
+max_width                      = 110
+single_line_if_else_max_width  = 70
+single_line_let_else_max_width = 75
+struct_lit_width               = 55
+struct_variant_width           = 55
+chain_width                    = 90
+fn_call_width                  = 90
+edition                        = "2024"
+match_arm_leading_pipes        = "Always"
+use_small_heuristics           = "default"

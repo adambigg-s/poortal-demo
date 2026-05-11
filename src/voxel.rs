@@ -1,4 +1,4 @@
-use crate::{mem::buffer, render::ray};
+use crate::{mem::buffer, ray};
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Species {

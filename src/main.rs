@@ -1,5 +1,7 @@
+pub mod camera;
 pub mod mem;
 pub mod portal;
+pub mod ray;
 pub mod render;
 pub mod state;
 pub mod text;
