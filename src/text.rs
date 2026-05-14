@@ -57,13 +57,18 @@ impl Default for Font {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(bon::Builder, Debug, Clone, Copy)]
 pub struct TextConfig<T> {
     pub color: T,
+    #[builder(default)]
     pub scale: usize,
+    #[builder(default)]
     pub start_x: usize,
+    #[builder(default)]
     pub start_y: usize,
+    #[builder(default)]
     pub stride_x: usize,
+    #[builder(default)]
     pub stride_y: usize,
 }
 
@@ -92,9 +97,11 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(bon::Builder, Debug)]
 pub struct TextWriter<'d, T> {
+    #[builder(default)]
     pub head_x: usize,
+    #[builder(default)]
     pub head_y: usize,
     pub config: TextConfig<T>,
     pub font: &'d Font,

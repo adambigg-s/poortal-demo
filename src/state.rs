@@ -2,7 +2,7 @@ use std::{collections, env, num, rc, time};
 
 use winit::{application, dpi, event, event_loop, keyboard, window};
 
-use crate::render;
+use crate::{portal, render};
 
 pub trait Application
 where
@@ -15,12 +15,17 @@ where
     fn frame(&mut self, context: &mut FrameData, pixels: &mut [u32]);
 }
 
-#[derive(Debug)]
+#[derive(bon::Builder, Debug)]
 pub struct WindowState {
+    #[builder(default = portal::WTITLE)]
     pub title: &'static str,
+    #[builder(default = portal::WWIDTH)]
     pub width: usize,
+    #[builder(default = portal::WHEIGHT)]
     pub height: usize,
+    #[builder(default = portal::CLEAR_COLOR)]
     pub clear_color: u32,
+    #[builder(default = portal::WSCALE)]
     pub scale: usize,
 }
 
@@ -30,7 +35,7 @@ impl WindowState {
     }
 }
 
-#[derive(Debug)]
+#[derive(bon::Builder, Debug)]
 pub struct FrameData<'r> {
     pub dt: f32,
     pub tick: u64,
@@ -162,7 +167,6 @@ where
             | event::WindowEvent::HoveredFile(path_buf) => todo!(),
             | event::WindowEvent::HoveredFileCancelled => todo!(),
             | event::WindowEvent::Ime(ime) => todo!(),
-            | event::WindowEvent::MouseWheel { device_id, delta, phase } => todo!(),
             | event::WindowEvent::MouseInput { device_id, state, button } => todo!(),
             | event::WindowEvent::PinchGesture { device_id, delta, phase } => todo!(),
             | event::WindowEvent::PanGesture { device_id, delta, phase } => todo!(),
@@ -176,6 +180,7 @@ where
             | event::WindowEvent::Occluded(_) => todo!(),
             | event::WindowEvent::Moved(physical_position) => {}
             | event::WindowEvent::ModifiersChanged(modifiers) => {}
+            | event::WindowEvent::MouseWheel { device_id, delta, phase } => {}
             | event::WindowEvent::CloseRequested => event_loop.exit(),
             | event::WindowEvent::Destroyed => event_loop.exit(),
             | event::WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {

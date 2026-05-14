@@ -8,7 +8,7 @@ use crate::{
 pub const WTITLE: &str = "Poortal Demo";
 pub const WWIDTH: usize = 396;
 pub const WHEIGHT: usize = 246;
-pub const WSCALE: usize = 3;
+pub const WSCALE: usize = 4;
 pub const CLEAR_COLOR: u32 = pack_color(25, 25, 40);
 pub const VSIZE: usize = 32;
 
@@ -37,8 +37,8 @@ impl state::Application for Portal {
 
     fn setup(context: &state::WindowState) -> Self {
         let camera = camera::Camera::builder()
-            .movespeed(10.0)
-            .lookspeed(0.005)
+            .movespeed(5.0)
+            .lookspeed(0.0025)
             .fov(67.0)
             .pos(glam::vec3(32.0 / 2.0, 32.0 / 2.0, 32.0 / 2.0))
             .renderdist(256.0)
@@ -93,11 +93,7 @@ impl state::Application for Portal {
         if context.input.key("space") {
             dy += 1;
         }
-        self.camera.update_translation(
-            dx as f32 * context.dt * self.camera.movespeed,
-            dy as f32 * context.dt * self.camera.movespeed,
-            dz as f32 * context.dt * self.camera.movespeed,
-        );
+        self.camera.update_translation_delta(dx as f32, dy as f32, dz as f32, context.dt);
 
         // camera render
         self.camera.render(self.buffer.width(), self.buffer.height(), |px, py, ray| {

@@ -37,17 +37,14 @@ pub struct Camera {
     pub uvec: glam::Vec3,
     #[builder(default = glam::Vec3::Y)]
     pub wupvec: glam::Vec3,
-
     #[builder(default)]
     pub yaw: f32,
     #[builder(default)]
     pub pitch: f32,
     #[builder(default)]
     pub pos: glam::Vec3,
-
     pub lookspeed: f32,
     pub movespeed: f32,
-
     pub fov: f32,
     #[builder(default = DEFAULT_RENDER_DISTANCE)]
     pub renderdist: f32,
@@ -75,10 +72,27 @@ impl Camera {
         self.update_vectors();
     }
 
+    pub fn update_rotation_delta(&mut self, dp: f32, dy: f32, dt: f32) {
+        self.pitch += dp * dt;
+        self.yaw += dy * dt;
+
+        self.pitch = self.pitch.clamp(-f32::consts::PI / 2.0 * 0.99, f32::consts::PI / 2.0 * 0.99);
+        self.yaw %= f32::consts::TAU;
+
+        self.update_vectors();
+    }
+
     pub fn update_translation(&mut self, dx: f32, dy: f32, dz: f32) {
         self.pos += self.fvec * dz;
         self.pos += self.rvec * dx;
-        self.pos += self.uvec * dy;
+        self.pos += self.wupvec * dy;
+    }
+
+    pub fn update_translation_delta(&mut self, dx: f32, dy: f32, dz: f32, dt: f32) {
+        let forward = glam::vec3(self.fvec.x, 0.0, self.fvec.z).normalize_or_zero();
+        let right = glam::vec3(self.rvec.x, 0.0, self.rvec.z).normalize_or_zero();
+        let movement = (right * dx + self.wupvec * dy + forward * dz).normalize_or_zero();
+        self.pos += movement * self.movespeed * dt;
     }
 
     pub fn render<F>(&self, width: usize, height: usize, mut pixel_emitter: F)

@@ -6,12 +6,13 @@ pub enum Species {
     None,
     Wall,
     Portal,
-    Light,
 }
 
 #[derive(bon::Builder, Default, Debug, Clone, Copy)]
 pub struct Voxel {
+    #[builder(default = 0xff00ffff)]
     pub color: u32,
+    #[builder(default = Species::Wall)]
     pub species: Species,
 }
 
