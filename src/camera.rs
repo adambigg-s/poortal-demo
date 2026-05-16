@@ -52,8 +52,9 @@ pub struct Camera {
 
 impl Camera {
     fn update_vectors(&mut self) {
-        self.fvec =
-            glam::Mat3::from_rotation_y(self.yaw) * glam::Mat3::from_rotation_x(self.pitch) * -glam::Vec3::Z;
+        self.fvec = glam::Mat3::from_rotation_y(self.yaw)
+            * glam::Mat3::from_rotation_x(self.pitch)
+            * glam::Vec3::NEG_Z;
         self.rvec = self.fvec.cross(self.wupvec);
         self.uvec = self.rvec.cross(self.fvec);
 
@@ -100,8 +101,8 @@ impl Camera {
         F: FnMut(usize, usize, ray::Ray),
     {
         let basis = CameraRays::new(self, width, height);
-        for py in 0..height {
-            for px in 0..width {
+        (0..height).for_each(|py| {
+            (0..width).for_each(|px| {
                 pixel_emitter(
                     px,
                     py,
@@ -111,8 +112,17 @@ impl Camera {
                         tspan: ray::RayInterval { low: ray::REAL_INTERVAL.low, high: self.renderdist },
                     },
                 );
-            }
-        }
+            });
+        });
+    }
+
+    pub fn render_par<F>(&self, width: usize, height: usize, mut pixel_emitter: F)
+    where
+        F: FnMut(usize, usize, ray::Ray),
+    {
+        let basis = CameraRays::new(self, width, height);
+        _ = (width, height, &mut pixel_emitter, basis);
+        todo!()
     }
 }
 
