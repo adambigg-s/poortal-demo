@@ -99,11 +99,14 @@ impl state::Application for Portal {
         self.camera.render(self.buffer.width(), self.buffer.height(), |px, py, ray| {
             if let Some(hit) = self.voxels.cast(ray) {
                 *self.buffer.get_mut([px, py]) = hit.color;
-            }
+            };
         });
 
-        self.writer.reset();
-        self.writer.write_str(&mut self.buffer, &format!("FPS: {:.1?}", context.dt.recip()));
+        self.writer
+            .reset()
+            .write_str(&mut self.buffer, &format!("FPS: {:.1?}", context.dt.recip()))
+            .newline()
+            .write_str(&mut self.buffer, "Portal Game.");
 
         // write back to window
         pixels.copy_from_slice(&self.buffer);

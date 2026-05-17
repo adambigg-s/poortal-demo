@@ -129,22 +129,25 @@ where
         }
     }
 
-    pub fn reset(&mut self) {
+    pub fn reset(&mut self) -> &mut Self {
         self.head_x = self.config.start_x;
         self.head_y = self.config.start_y;
+        self
     }
 
-    pub fn newline(&mut self) {
+    pub fn newline(&mut self) -> &mut Self {
         self.head_x = self.config.start_x;
         self.head_y += self.config.stride_y * self.config.scale;
+        self
     }
 
-    pub fn set_pos(&mut self, x: usize, y: usize) {
+    pub fn set_pos(&mut self, x: usize, y: usize) -> &mut Self {
         self.head_x = x;
         self.head_y = y;
+        self
     }
 
-    pub fn write_char<R>(&mut self, raster: &mut R, chr: char)
+    pub fn write_char<R>(&mut self, raster: &mut R, chr: char) -> &mut Self
     where
         R: render::Raster<Item = T>,
     {
@@ -161,7 +164,7 @@ where
 
         if chr == '\n' {
             self.newline();
-            return;
+            return self;
         }
 
         let rune_idx = chr as usize;
@@ -192,25 +195,27 @@ where
                 }
             });
         });
-
         self.head_x += scaled_stride_x;
+        self
     }
 
-    pub fn write_str<R>(&mut self, raster: &mut R, text: &str)
+    pub fn write_str<R>(&mut self, raster: &mut R, text: &str) -> &mut Self
     where
         R: render::Raster<Item = T>,
     {
         text.chars().for_each(|chr| {
             self.write_char(raster, chr);
         });
+        self
     }
 
-    pub fn write_str_at<R>(&mut self, raster: &mut R, text: &str, col: usize, row: usize)
+    pub fn write_str_at<R>(&mut self, raster: &mut R, text: &str, col: usize, row: usize) -> &mut Self
     where
         R: render::Raster<Item = T>,
     {
         self.set_pos(col, row);
         self.write_str(raster, text);
+        self
     }
 }
 

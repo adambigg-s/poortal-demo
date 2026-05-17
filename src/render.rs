@@ -1,5 +1,9 @@
 use crate::mem::buffer;
 
+unsafe impl<T, const N: usize> Send for buffer::Buffer<T, N> {}
+
+unsafe impl<T, const N: usize> Sync for buffer::Buffer<T, N> {}
+
 pub trait Raster {
     type Item;
 
@@ -39,7 +43,3 @@ impl<T> Raster for RenderTarget<T> {
         RenderTarget::get(self, [x, y])
     }
 }
-
-unsafe impl<T> Send for RenderTarget<T> {}
-
-unsafe impl<T> Sync for RenderTarget<T> {}

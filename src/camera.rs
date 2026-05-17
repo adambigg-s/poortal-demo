@@ -1,4 +1,4 @@
-use std::{f32, fmt};
+use std::{f32, fmt, thread};
 
 use crate::ray;
 
@@ -103,26 +103,36 @@ impl Camera {
         let basis = CameraRays::new(self, width, height);
         (0..height).for_each(|py| {
             (0..width).for_each(|px| {
-                pixel_emitter(
-                    px,
-                    py,
-                    ray::Ray {
-                        origin: self.pos,
-                        direction: basis.point_to_pixel(px, py),
-                        tspan: ray::RayInterval { low: ray::REAL_INTERVAL.low, high: self.renderdist },
-                    },
-                );
+                pixel_emitter(px, py, self.get_ray(&basis, px, py));
             });
         });
     }
 
-    pub fn render_par<F>(&self, width: usize, height: usize, mut pixel_emitter: F)
+    pub fn render_par<F>(&self, width: usize, height: usize, pixel_emitter: F)
     where
-        F: FnMut(usize, usize, ray::Ray),
+        F: Fn(usize, usize, ray::Ray) + Send + Sync,
     {
         let basis = CameraRays::new(self, width, height);
-        _ = (width, height, &mut pixel_emitter, basis);
-        todo!()
+        thread::scope(|scope| {
+            for py in 0..height {
+                let basis = &basis;
+                let emitter = &pixel_emitter;
+                let get_ray = move |px| self.get_ray(basis, px, py);
+                scope.spawn(move || {
+                    for px in 0..width {
+                        emitter(px, py, get_ray(px));
+                    }
+                });
+            }
+        });
+    }
+
+    fn get_ray(&self, basis: &CameraRays, px: usize, py: usize) -> ray::Ray {
+        ray::Ray {
+            origin: self.pos,
+            direction: basis.point_to_pixel(px, py),
+            tspan: ray::RayInterval { low: ray::REAL_INTERVAL.low, high: self.renderdist },
+        }
     }
 }
 
